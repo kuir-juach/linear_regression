@@ -5,14 +5,14 @@ from pydantic import BaseModel
 import joblib
 import pandas as pd
 
-# Logging Configuration
+# Set up logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Initialize FastAPI app
+# Create FastAPI app
 app = FastAPI()
 
-# Load Model
-MODEL_PATH = "model.pkl"  # Ensure this matches your model file location
+# Load your model (make sure model.pkl is in the same directory as this script or provide correct path)
+MODEL_PATH = "model.pkl"
 try:
     model = joblib.load(MODEL_PATH)
     logging.info("Model loaded successfully from '%s'.", MODEL_PATH)
@@ -20,22 +20,22 @@ except Exception as e:
     logging.error("Error loading model: %s", str(e))
     raise RuntimeError("Model could not be loaded. Check the file path and format.")
 
-# Request Body Schema
+# Define InputData schema
 class InputData(BaseModel):
     feature1: float
     feature2: float
     feature3: float
 
-# Root Endpoint
+# Root endpoint
 @app.get("/")
 async def root():
     return {"message": "Welcome to the FastAPI Prediction API!"}
 
-# Prediction Endpoint
+# Prediction endpoint
 @app.post("/predict")
 async def predict(data: InputData):
     try:
-        # Prepare input data
+        # Convert input data to pandas DataFrame for prediction
         input_df = pd.DataFrame([data.dict()])
         logging.info("Received data for prediction: %s", input_df.to_dict(orient="records"))
 
@@ -48,9 +48,13 @@ async def predict(data: InputData):
         logging.error("Prediction error: %s", str(e))
         raise HTTPException(status_code=500, detail="Prediction failed. Check input data or model.")
 
-# Start server
+# Entry point to start the FastAPI app
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))  # Use PORT environment variable or default to 8000
+
+    # Get the port from the environment (Render provides this)
+    port = int(os.environ.get("PORT", 8000))
     logging.info(f"Starting server on port {port}")
+
+    # Run FastAPI on 0.0.0.0 so that it's accessible externally
     uvicorn.run(app, host="0.0.0.0", port=port)
