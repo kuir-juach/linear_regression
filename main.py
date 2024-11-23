@@ -3,80 +3,97 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import joblib
 import pandas as pd
+import os
 import logging
 
-# Initialize the app
+# Initialize the FastAPI app
 app = FastAPI()
 
-# Configure CORS middleware
-#origins = [
- #   "http://localhost",         
-  #  "http://localhost:3000",    
-   # "http://127.0.0.1:8000",    
-    #"*"                         
-#]
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+# Environment variables for dynamic configuration
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")  # Default to allow all origins
+MODEL_PATH = os.getenv("MODEL_PATH", "model.pkl")  # Default model path
+
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins, # type: ignore
+    allow_origins=[origin.strip() for origin in CORS_ORIGINS.split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Enable logging for debugging
-logging.basicConfig(level=logging.INFO)
+# Load the model
+try:
+    if not os.path.exists(MODEL_PATH):
+        raise FileNotFoundError(f"Model file not found: {MODEL_PATH}")
+    model_retrained = joblib.load(MODEL_PATH)
+    important_features = model_retrained.feature_names_in_.tolist()
+    logging.info("Model loaded successfully.")
+except Exception as e:
+    logging.error(f"Error loading model: {e}")
+    raise RuntimeError("Model loading failed. Please check the model file and path.")
 
-# Load the retrained model
-model_retrained = joblib.load('model.pkl')
-
-# Extract the feature names used during training
-important_features = model_retrained.feature_names_in_.tolist()
-
-# Define the Pydantic model for request validation
+# Define the Pydantic model for input validation
 class PredictionRequest(BaseModel):
-    # Dynamically generate fields based on the feature names
     Roll_No: int
     IA1: int
     IA2: int
-  
 
     class Config:
-        json_schema_extra = {  # Updated to use json_schema_extra
+        schema_extra = {
             "example": {
-                "Roll_No": 1.0,
-                "IA1": 0.0,
-                "IA2": 0.0,
-                           }
+                "Roll_No": 1,
+                "IA1": 75,
+                "IA2": 85,
+            }
         }
 
-@app.post("/predict")
-def predict(request: PredictionRequest):
-    try:
-        # Log the incoming request
-        logging.info(f"Received request: {request}")
 
-        # Convert input data to a DataFrame
+@app.post("/predict")
+async def predict(request: PredictionRequest):
+    """
+    Predict based on the input data.
+    """
+    try:
+        # Log the input request
+        logging.info(f"Received request data: {request}")
+
+        # Prepare the input DataFrame
         request_data = request.dict()
         df_input = pd.DataFrame([request_data])
 
-        # Map input fields to model feature names
+        # Map the input fields to model features
         input_mapping = {
             "Roll_No": "Roll NO",
             "IA1": "IA1",
-            "IA2": "IA2"
+            "IA2": "IA2",
         }
         df_input.rename(columns=input_mapping, inplace=True)
 
-        # Ensure input DataFrame matches the model's feature order
+        # Ensure the DataFrame matches the model's feature order
         df_input = df_input[important_features]
 
-        # Make a prediction
+        # Perform the prediction
         prediction = model_retrained.predict(df_input)
 
-        # Return the prediction result
+        # Return the prediction
         return {"prediction": prediction[0]}
 
+    except KeyError as ke:
+        logging.error(f"Missing or mismatched input feature: {ke}")
+        raise HTTPException(status_code=400, detail=f"Input feature error: {ke}")
+
     except Exception as e:
-        logging.error(f"Prediction failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Prediction error: {e}")
+        raise HTTPException(status_code=500, detail=f"An error occurred during prediction: {e}")
+
+
+@app.get("/")
+async def root():
+    """
+    Health check endpoint.
+    """
+    return {"message": "Welcome to the FastAPI Prediction API!"}
