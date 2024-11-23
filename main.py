@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import joblib
 import pandas as pd
+import uvicorn
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -11,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 # Create FastAPI app
 app = FastAPI()
 
-# Load your model (make sure model.pkl is in the same directory as this script or provide correct path)
+# Load your model (ensure model.pkl is in the same directory as this script or provide the correct path)
 MODEL_PATH = "model.pkl"
 try:
     model = joblib.load(MODEL_PATH)
@@ -26,12 +27,12 @@ class InputData(BaseModel):
     feature2: float
     feature3: float
 
-# Root endpoint
+# Root endpoint to check if the server is up
 @app.get("/")
 async def root():
     return {"message": "Welcome to the FastAPI Prediction API!"}
 
-# Prediction endpoint
+# Prediction endpoint to handle POST requests
 @app.post("/predict")
 async def predict(data: InputData):
     try:
@@ -39,10 +40,11 @@ async def predict(data: InputData):
         input_df = pd.DataFrame([data.dict()])
         logging.info("Received data for prediction: %s", input_df.to_dict(orient="records"))
 
-        # Make prediction
+        # Make prediction using the model
         prediction = model.predict(input_df)
         logging.info("Prediction result: %s", prediction)
 
+        # Return the prediction in the response
         return {"prediction": prediction.tolist()}
     except Exception as e:
         logging.error("Prediction error: %s", str(e))
@@ -50,8 +52,6 @@ async def predict(data: InputData):
 
 # Entry point to start the FastAPI app
 if __name__ == "__main__":
-    import uvicorn
-
     # Get the port from the environment (Render provides this)
     port = int(os.environ.get("PORT", 8000))
     logging.info(f"Starting server on port {port}")
